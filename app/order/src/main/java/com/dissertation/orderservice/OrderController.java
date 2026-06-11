@@ -1,5 +1,7 @@
 package com.dissertation.orderservice;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -9,16 +11,31 @@ import java.util.List;
 @RequestMapping("/orders")
 public class OrderController {
 
+    private final InventoryGrpcClient inventoryGrpcClient;
+
+    public OrderController(InventoryGrpcClient inventoryGrpcClient) {
+        this.inventoryGrpcClient = inventoryGrpcClient;
+    }
+
     @GetMapping("/health")
     public String healthCheck() {
         return "Service is running";
     }
 
     @PostMapping
-    public String createOrder(@RequestBody Order order) {
+    public ResponseEntity<String> createOrder(@RequestBody Order order) {
+        boolean inStock = inventoryGrpcClient.checkStock(order.getItem());
+
+        if (!inStock) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body("Order rejected: item not in stock");
+        }
+
         long randomId = Math.round(Math.random() * 1000);
         order.setId(randomId);
-        return "Order received: " + order.getQuantity() + "x " + order.getItem() + " (ID: " + order.getId() + ")";
+        String confirmation = "Order received: " + order.getQuantity() + "x " + order.getItem()
+                + " (ID: " + order.getId() + ") — stock confirmed via gRPC";
+        return ResponseEntity.ok(confirmation);
     }
 
     @GetMapping
