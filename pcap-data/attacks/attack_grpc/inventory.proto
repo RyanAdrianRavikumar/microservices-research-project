@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package com.dissertation.inventory;
+
+option java_package = "com.dissertation.inventoryservice.grpc";
+option java_outer_classname = "InventoryProto";
+
+service InventoryService {
+    rpc CheckStock (CheckStockRequest) returns (StockResponse);
+}
+
+message CheckStockRequest {
+    string item_name = 1;
+}
+
+message StockResponse {
+    bool in_stock = 1;
+    string message = 2;
+}

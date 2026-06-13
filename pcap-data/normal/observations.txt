@@ -1,0 +1,90 @@
+PCAP OBSERVATIONS — NORMAL TRAFFIC
+====================================
+Date captured: 12 June 2026
+Environment: localhost, Spring Boot 3.2.0, Java 17
+Tool: Wireshark with Npcap loopback adapter
+
+--- rest_normal.pcap ---
+Total packets: 62,546 (2,596 displayed with tcp.port == 8080 filter, 4.2%)
+Protocol seen in Wireshark: HTTP/1.1, TCP
+Payload readable: YES — plaintext JSON and HTTP headers fully visible
+Sample payload observed: POST /orders HTTP/1.1, JSON (application/json)
+Response observed: HTTP/1.1 200 (text/plain)
+Connection pattern: New TCP handshake per request — SYN, SYN/ACK, ACK, 
+  PSH/ACK, ACK sequence clearly visible for every order
+Typical packet size: 64–268 bytes (small ACK packets ~64 bytes, 
+  data packets ~268 bytes)
+Notable observation: HTTP responses return as text/plain, confirming 
+  the controller returns a plain String. Full HTTP headers readable 
+  in payload panel including Content-Type, Keep-Alive, UTF-8 encoding.
+  REST is entirely human-readable without any decryption or decoding.
+
+--- grpc_normal.pcap ---
+Total packets: 8,767 (870 displayed with tcp.port == 9090 filter, 9.9%)
+Protocol seen in Wireshark: TCP only (no HTTP2 layer decoded)
+Payload readable: NO — binary protobuf encoding, not human-readable
+Frame types visible: PSH/ACK data frames, ACK acknowledgements
+Connection pattern: Persistent TCP connection reused across calls —
+  no repeated SYN/SYN-ACK sequences between individual gRPC calls,
+  confirming HTTP/2 connection multiplexing behaviour
+Typical packet size: 44–107 bytes (significantly smaller than REST)
+Notable observation: Wireshark shows only TCP layer, not HTTP/2 frames,
+  because gRPC traffic on loopback is not decoded as HTTP2 by default.
+  The payload panel shows raw binary bytes with no readable text,
+  except for a partial string visible at offset 0x50: "available e"
+  which is a fragment of the StockResponse message field leaking 
+  through the binary encoding. Packet count is much lower than REST
+  (870 vs 2,596) despite the same number of requests, confirming 
+  HTTP/2 connection reuse reduces handshake overhead dramatically.
+
+--- rabbitmq_normal.pcap ---
+Total packets: 26,300 (1,021 displayed with tcp.port == 5672 filter, 3.9%)
+Protocol seen in Wireshark: AMQP/JSON, TCP
+Payload readable: PARTIAL — AMQP frame structure fully decoded by 
+  Wireshark, payload content partially readable as JSON/text
+Frame types visible: Basic.Publish frames with exchange and routing key 
+  clearly labelled in Info column
+Exchange observed: x=orders-exchange
+Routing key observed: rk=order.crea[ted] (truncated in display)
+Connection pattern: Single persistent TCP connection — all 200 messages
+  flow through one connection between ports 5672 and 53703/53877,
+  alternating AMQP/JSON publish frames with TCP ACK packets
+Typical packet size: 44–222 bytes (ACKs ~44 bytes, publish frames 
+  219–222 bytes)
+Notable observation: Wireshark automatically decodes AMQP protocol and
+  labels each message as Basic.Publish, making it the most readable
+  of the three protocols at the frame level. The payload panel shows
+  the order string partially visible in hex: "Order r{...item=p ho
+  antity=2}" confirming the message content is being transmitted.
+  The AMQP layer shows three nested "Advanced Message Queuing Protocol"
+  entries in the decode panel, indicating AMQP frame nesting structure.
+
+CROSS-PROTOCOL COMPARISON NOTES:
+===========================================
+Packet counts (filtered, 200 requests each):
+  REST (port 8080):     2,596 packets
+  gRPC (port 9090):       870 packets  <- 66% fewer than REST
+  RabbitMQ (port 5672): 1,021 packets
+
+Protocol visibility:
+  REST:     Fully readable — HTTP/1.1 plaintext JSON in payload panel
+  gRPC:     Not readable — binary protobuf, TCP layer only in Wireshark
+  RabbitMQ: Frame readable — AMQP decoded, payload partially readable
+
+Connection behaviour:
+  REST:     New TCP connection per request (SYN visible each time)
+  gRPC:     Single persistent connection, streams multiplexed (HTTP/2)
+  RabbitMQ: Single persistent broker connection for all messages
+
+Packet size comparison:
+  REST:     64–268 bytes (largest — verbose HTTP headers + JSON body)
+  gRPC:     44–107 bytes (smallest — compact binary protobuf)
+  RabbitMQ: 44–222 bytes (medium — AMQP framing + string payload)
+
+Key finding for dissertation:
+  The three protocols produce visually and statistically distinct 
+  PCAP signatures. REST is identifiable by HTTP keyword visibility 
+  and repeated SYN sequences. gRPC is identifiable by binary payload 
+  and persistent connection with no HTTP decode. RabbitMQ is 
+  identifiable by AMQP frame labels and exchange/routing key metadata.
+  These distinctions form the basis of RQ1 in this dissertation.

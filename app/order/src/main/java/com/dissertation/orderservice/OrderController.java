@@ -1,5 +1,8 @@
 package com.dissertation.orderservice;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -11,10 +14,14 @@ import java.util.List;
 @RequestMapping("/orders")
 public class OrderController {
 
-    private final InventoryGrpcClient inventoryGrpcClient;
+    private static final Logger logger = LoggerFactory.getLogger(OrderController.class);
 
-    public OrderController(InventoryGrpcClient inventoryGrpcClient) {
+    private final InventoryGrpcClient inventoryGrpcClient;
+    private final RabbitTemplate rabbitTemplate;
+
+    public OrderController(InventoryGrpcClient inventoryGrpcClient, RabbitTemplate rabbitTemplate) {
         this.inventoryGrpcClient = inventoryGrpcClient;
+        this.rabbitTemplate = rabbitTemplate;
     }
 
     @GetMapping("/health")
@@ -33,8 +40,14 @@ public class OrderController {
 
         long randomId = Math.round(Math.random() * 1000);
         order.setId(randomId);
+
+        String messageString = "Order{id=" + order.getId() + ", item=" + order.getItem() +
+                ", quantity=" + order.getQuantity() + "}";
+        rabbitTemplate.convertAndSend("orders-exchange", "order.created", messageString);
+        logger.info("Published to RabbitMQ: " + messageString);
+
         String confirmation = "Order received: " + order.getQuantity() + "x " + order.getItem()
-                + " (ID: " + order.getId() + ") — stock confirmed via gRPC";
+                + " (ID: " + order.getId() + ") — stock confirmed, notification queued";
         return ResponseEntity.ok(confirmation);
     }
 
