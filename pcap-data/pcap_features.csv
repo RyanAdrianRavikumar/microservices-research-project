@@ -1,0 +1,1 @@
+timestamp,packet_length,inter_arrival_time,dst_port,src_port,tcp_syn,tcp_fin,tcp_psh,tcp_ack,traffic_type,is_attack
